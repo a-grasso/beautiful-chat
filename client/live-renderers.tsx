@@ -173,6 +173,21 @@ export function extractEvalDuration(output: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+/**
+ * Claude and Codex report an edit as the replaced and replacement text, with no
+ * unified diff. Without one the edit card has nothing to draw.
+ */
+export function buildEditDiff(oldText?: string, newText?: string): string | undefined {
+  if (oldText === undefined || newText === undefined || oldText === newText) return undefined;
+  const oldLines = oldText.split("\n");
+  const newLines = newText.split("\n");
+  return [
+    `@@ -1,${oldLines.length} +1,${newLines.length} @@`,
+    ...oldLines.map((line) => `-${line}`),
+    ...newLines.map((line) => `+${line}`),
+  ].join("\n");
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
@@ -443,7 +458,13 @@ export function LiveToolCallRenderer({
     const diff: string | undefined =
       (typeof detail.unifiedDiff === "string" ? detail.unifiedDiff : undefined) ||
       (typeof detail.diff === "string" ? detail.diff : undefined) ||
-      extractStringProp(output, "diff");
+      extractStringProp(output, "diff") ||
+      (rawName === "edit" || detailType === "edit"
+        ? buildEditDiff(
+            asString(detail.oldString) ?? asString(input.old_string),
+            asString(detail.newString) ?? asString(input.new_string),
+          )
+        : undefined);
 
     // A tool that answers with content blocks carries its prose in
     // `content[0].text`. That text is allowed to be empty — a `hub wait` job
